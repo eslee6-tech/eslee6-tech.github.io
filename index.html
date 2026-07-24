@@ -17,6 +17,7 @@
     <nav class="tab-nav" id="tab-nav">
       <button class="nav-btn active" data-view="timer">타이머</button>
       <button class="nav-btn" data-view="planner">플래너</button>
+      <button class="nav-btn" data-view="timetable">시간표</button>
       <button class="nav-btn" data-view="todo">할 일</button>
       <button class="nav-btn" data-view="dashboard">대시보드</button>
       <button class="nav-btn" data-view="rest">휴식모드</button>
@@ -128,6 +129,24 @@
     </div>
   </section>
 
+  <!-- 2b. 학교 시간표 -->
+  <section id="view-timetable" class="view">
+    <div class="view-header">
+      <h1>학교 시간표</h1>
+      <p>요일별 교시를 입력하면 한눈에 시간표를 볼 수 있어요. 입력한 내용은 자동으로 저장됩니다.</p>
+    </div>
+    <div class="card timetable-card">
+      <div class="timetable-scroll">
+        <table class="timetable-table" id="timetable-table">
+          <thead>
+            <tr><th>교시</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th></tr>
+          </thead>
+          <tbody id="timetable-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <!-- 3. 오늘의 목표 -->
   <section id="view-todo" class="view">
     <div class="view-header">
@@ -226,6 +245,15 @@
     <div class="view-header">
       <h1>학습 캘린더</h1>
       <p>날짜별 학습 기록과 연속 학습 일수를 확인하세요.</p>
+    </div>
+    <div class="card dday-card">
+      <h3>D-Day</h3>
+      <form id="dday-form" class="dday-form">
+        <input type="text" id="dday-title" placeholder="예: 중간고사" required>
+        <input type="date" id="dday-date" required>
+        <button class="btn btn-primary btn-sm" type="submit">추가</button>
+      </form>
+      <div class="dday-list" id="dday-list"></div>
     </div>
     <div class="card calendar-card">
       <div class="calendar-nav">

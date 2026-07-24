@@ -77,7 +77,7 @@ function switchView(name){
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
   document.getElementById('tab-nav').classList.remove('open');
   if(name==='dashboard') renderDashboard();
-  if(name==='calendar') renderCalendar();
+  if(name==='calendar'){ renderCalendar(); renderDdays(); document.getElementById('day-detail').hidden = true; }
   if(name==='report') renderReport(currentReportRange);
   if(name==='todo') renderTodos();
   window.scrollTo({top:0, behavior:'smooth'});
@@ -350,6 +350,35 @@ function renderPlanResult(data){
 }
 
 /* ==================================================================
+   TIMETABLE
+   ================================================================== */
+const TIMETABLE_DAYS = ['mon','tue','wed','thu','fri'];
+const TIMETABLE_PERIODS = [1,2,3,4,5,6,7];
+let timetable = LS.get('sb_timetable', {});
+function saveTimetable(){ LS.set('sb_timetable', timetable); }
+function initTimetable(){
+  const tbody = document.getElementById('timetable-body');
+  tbody.innerHTML = '';
+  TIMETABLE_PERIODS.forEach(period=>{
+    const tr = document.createElement('tr');
+    let cellsHtml = `<th>${period}교시</th>`;
+    TIMETABLE_DAYS.forEach(day=>{
+      const key = `${day}-${period}`;
+      const val = timetable[key] || '';
+      cellsHtml += `<td><input type="text" data-key="${key}" value="${escapeHtml(val)}" placeholder="-"></td>`;
+    });
+    tr.innerHTML = cellsHtml;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('input').forEach(input=>{
+    input.addEventListener('change', ()=>{
+      timetable[input.dataset.key] = input.value.trim();
+      saveTimetable();
+    });
+  });
+}
+
+/* ==================================================================
    TODO
    ================================================================== */
 const PRIORITY_ORDER = { high:0, mid:1, low:2 };
@@ -555,6 +584,61 @@ function stopSound(){
 }
 
 /* ==================================================================
+   D-DAY
+   ================================================================== */
+let ddays = LS.get('sb_ddays', []);
+function saveDdays(){ LS.set('sb_ddays', ddays); }
+function ddayDiff(dateStr){
+  return Math.round((new Date(dateStr+'T00:00:00') - new Date(todayStr()+'T00:00:00')) / 86400000);
+}
+function ddayLabel(diff){
+  return diff === 0 ? 'D-DAY' : diff > 0 ? `D-${diff}` : `D+${Math.abs(diff)}`;
+}
+function addDday(title, date){
+  ddays.push({ id: Date.now()+Math.random(), title, date });
+  saveDdays();
+  renderDdays();
+  renderCalendar();
+}
+function deleteDday(id){
+  ddays = ddays.filter(d=>d.id!==id);
+  saveDdays(); renderDdays(); renderCalendar();
+}
+function renderDdays(){
+  const list = document.getElementById('dday-list');
+  if(ddays.length === 0){ list.innerHTML = `<p class="tagline">등록된 D-Day가 없어요. 시험이나 중요한 일정을 추가해보세요.</p>`; return; }
+  const sorted = [...ddays].sort((a,b)=> a.date.localeCompare(b.date));
+  list.innerHTML = '';
+  sorted.forEach(d=>{
+    const diff = ddayDiff(d.date);
+    const chip = document.createElement('div');
+    chip.className = 'dday-chip' + (diff < 0 ? ' past' : '');
+    chip.innerHTML = `<span class="dd-count">${ddayLabel(diff)}</span><span class="dd-title">${escapeHtml(d.title)}</span><span class="tagline">${d.date}</span><button class="dd-delete" title="삭제">✕</button>`;
+    chip.querySelector('.dd-delete').addEventListener('click', ()=>deleteDday(d.id));
+    list.appendChild(chip);
+  });
+}
+
+/* ==================================================================
+   CALENDAR EVENTS (schedule / to-do per date)
+   ================================================================== */
+let events = LS.get('sb_events', []);
+function saveEvents(){ LS.set('sb_events', events); }
+function eventsOnDate(dateStr){ return events.filter(e=>e.date===dateStr); }
+function addEvent(dateStr, text){
+  events.push({ id: Date.now()+Math.random(), date: dateStr, text, done:false });
+  saveEvents();
+}
+function toggleEvent(id){
+  const e = events.find(x=>x.id===id);
+  if(e){ e.done = !e.done; saveEvents(); }
+}
+function deleteEvent(id){
+  events = events.filter(x=>x.id!==id);
+  saveEvents();
+}
+
+/* ==================================================================
    CALENDAR
    ================================================================== */
 let calYear, calMonth;
@@ -572,9 +656,17 @@ function renderCalendar(){
   for(let day=1; day<=daysInMonth; day++){
     const dateStr = `${calYear}-${pad2(calMonth+1)}-${pad2(day)}`;
     const mins = minutesOnDate(dateStr, 'study');
+    const dayEvents = eventsOnDate(dateStr);
+    const ddayMatch = ddays.find(d=>d.date===dateStr);
     const cell = document.createElement('div');
-    cell.className = 'cal-day' + (dateStr === todayStr() ? ' today' : '');
-    cell.innerHTML = `<span class="d-num">${day}</span>${mins>0?`<span class="d-dot" style="opacity:${Math.min(1, mins/goal)}"></span>`:''}`;
+    cell.className = 'cal-day' + (dateStr === todayStr() ? ' today' : '') + (ddayMatch ? ' has-dday' : '');
+    const dots = (mins>0 || dayEvents.length>0)
+      ? `<div class="d-dots">${mins>0?`<span class="d-dot" style="opacity:${Math.min(1, mins/goal)}"></span>`:''}${dayEvents.length>0?'<span class="d-event-dot"></span>':''}</div>`
+      : '';
+    const preview = dayEvents.length>0
+      ? `<span class="d-event-preview">${escapeHtml(dayEvents[0].text)}${dayEvents.length>1?` +${dayEvents.length-1}`:''}</span>`
+      : (ddayMatch ? `<span class="d-event-preview">🚩${escapeHtml(ddayMatch.title)}</span>` : '');
+    cell.innerHTML = `<span class="d-num">${day}</span>${dots}${preview}`;
     cell.addEventListener('click', ()=>showDayDetail(dateStr));
     grid.appendChild(cell);
   }
@@ -586,13 +678,47 @@ function renderCalendar(){
 function showDayDetail(dateStr){
   const box = document.getElementById('day-detail');
   const entries = logs.filter(l=>l.date===dateStr);
+  const ddayMatch = ddays.find(d=>d.date===dateStr);
+  let html = `<h3>${dateStr}${ddayMatch?` · 🚩 ${escapeHtml(ddayMatch.title)} (${ddayLabel(ddayDiff(dateStr))})`:''}</h3>`;
   if(entries.length === 0){
-    box.innerHTML = `<h3>${dateStr}</h3><p class="tagline">기록이 없습니다.</p>`;
+    html += `<p class="tagline">학습 기록이 없습니다.</p>`;
   } else {
     const rows = entries.map(l=>`<li>${l.type==='study'?'📖 공부':'☕ 휴식'} · ${l.subject?l.subject+' · ':''}${minutesToLabel(l.minutes)}${l.satisfaction?` · 만족도 ${l.satisfaction}점`:''}</li>`).join('');
-    box.innerHTML = `<h3>${dateStr}</h3><ul>${rows}</ul>`;
+    html += `<ul>${rows}</ul>`;
   }
+  html += `<h3 style="margin-top:16px;">일정 &amp; 할 일</h3>
+    <div class="day-events" id="day-events-list"></div>
+    <form class="day-event-form" id="day-event-form">
+      <input type="text" id="day-event-input" placeholder="할 일이나 일정을 입력하세요">
+      <button class="btn btn-primary btn-sm" type="submit">추가</button>
+    </form>`;
+  box.innerHTML = html;
   box.hidden = false;
+  renderDayEvents(dateStr);
+  document.getElementById('day-event-form').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const input = document.getElementById('day-event-input');
+    if(input.value.trim()){
+      addEvent(dateStr, input.value.trim());
+      input.value = '';
+      renderDayEvents(dateStr);
+      renderCalendar();
+    }
+  });
+}
+function renderDayEvents(dateStr){
+  const wrap = document.getElementById('day-events-list');
+  const list = eventsOnDate(dateStr);
+  if(list.length === 0){ wrap.innerHTML = `<p class="tagline">등록된 일정이 없어요.</p>`; return; }
+  wrap.innerHTML = '';
+  list.forEach(ev=>{
+    const row = document.createElement('div');
+    row.className = 'day-event-row' + (ev.done ? ' done' : '');
+    row.innerHTML = `<input type="checkbox" ${ev.done?'checked':''}><span class="ev-text">${escapeHtml(ev.text)}</span><button class="ev-delete" title="삭제">✕</button>`;
+    row.querySelector('input').addEventListener('change', ()=>{ toggleEvent(ev.id); renderDayEvents(dateStr); renderCalendar(); });
+    row.querySelector('.ev-delete').addEventListener('click', ()=>{ deleteEvent(ev.id); renderDayEvents(dateStr); renderCalendar(); });
+    wrap.appendChild(row);
+  });
 }
 
 /* ==================================================================
@@ -712,9 +838,11 @@ function init(){
   updateGoalProgress();
   renderTimerDisplay(); setTimerButtons();
   initPlannerForm();
+  initTimetable();
   renderTodos();
   renderGuide('stretch');
   renderDiaryList();
+  renderDdays();
   initSettings();
 
   /* nav */
@@ -789,6 +917,15 @@ function init(){
   });
   document.getElementById('cal-next').addEventListener('click', ()=>{
     calMonth++; if(calMonth>11){calMonth=0; calYear++;} document.getElementById('day-detail').hidden=true; renderCalendar();
+  });
+  document.getElementById('dday-form').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const titleInput = document.getElementById('dday-title');
+    const dateInput = document.getElementById('dday-date');
+    if(titleInput.value.trim() && dateInput.value){
+      addDday(titleInput.value.trim(), dateInput.value);
+      titleInput.value = ''; dateInput.value = '';
+    }
   });
 
   /* diary */
